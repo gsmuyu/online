@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>南昌市基准地价查询系统 | GitHub 镜像加速导入</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; overflow: hidden; background-color: #f0f2f5; }
+        .app-container { display: flex; height: 100%; width: 100%; }
+        .sidebar { width: 460px; background: rgba(255, 255, 255, 0.96); box-shadow: 2px 0 12px rgba(0,0,0,0.1); display: flex; flex-direction: column; z-index: 10; border-right: 1px solid #ddd; overflow-y: auto; }
+        .sidebar-header { padding: 16px; background: linear-gradient(135deg, #1e4a6e, #0f2c3f); color: white; position: sticky; top: 0; z-index: 20; }
+        .sidebar-header h2 { font-size: 1.3rem; display: flex; align-items: center; gap: 8px; margin-bottom: 0; }
+        .global-actions { padding: 12px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn { border: none; padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary { background: #1e4a6e; color: white; }
+        .btn-primary:hover { background: #0f3550; }
+        .btn-outline { background: white; border: 1px solid #1e4a6e; color: #1e4a6e; }
+        .btn-outline:hover { background: #e9f0f5; }
+        .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
+        .btn-success { background: #2c7a4d; color: white; border: none; }
+        .btn-success:hover { background: #1f5e3a; }
+        .btn-info { background: #3b82f6; color: white; border: none; }
+        .btn-info:hover { background: #2563eb; }
+        .tree-container { padding: 12px; overflow-y: auto; flex: 1; }
+        .tree-node { margin-left: 0; list-style: none; margin-bottom: 4px; }
+        .node-content { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-radius: 8px; cursor: pointer; transition: background 0.1s; background: white; border: 1px solid #eef2f6; margin-bottom: 2px; }
+        .node-content:hover { background: #f1f5f9; }
+        .node-label { display: flex; align-items: center; gap: 8px; flex: 1; font-size: 0.85rem; font-weight: 500; }
+        .node-label i { width: 20px; color: #5b6e8c; }
+        .node-actions { display: flex; gap: 6px; visibility: hidden; }
+        .node-content:hover .node-actions { visibility: visible; }
+        .leaf-layer-controls { padding: 8px 12px; background: #fafcff; border-radius: 8px; margin: 4px 0 8px 28px; border-left: 2px solid #cbd5e1; display: block; }
+        .style-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+        .style-item { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; }
+        .features-list { max-height: 150px; overflow-y: auto; background: #f8fafc; border-radius: 8px; padding: 4px; margin-top: 6px; border: 1px solid #e2e8f0; }
+        .feature-item { display: flex; justify-content: space-between; padding: 4px 6px; font-size: 0.7rem; border-left: 3px solid; margin: 3px 0; background: white; border-radius: 4px; }
+        .empty-features { text-align: center; color: #94a3b8; padding: 8px; font-size: 0.7rem; }
+        .import-btn-sm { background: #eef2ff; border: 1px dashed #1e4a6e; font-size: 0.65rem; padding: 2px 8px; border-radius: 12px; cursor: pointer; }
+        .visibility-icon { cursor: pointer; width: 24px; text-align: center; color: #1e4a6e; }
+        .visibility-icon.hidden { color: #adb5bd; }
+        .children-wrapper { margin-left: 24px; display: none; }
+        .children-wrapper.expanded { display: block; }
+        .map-container { flex: 1; position: relative; }
+        #map { height: 100%; width: 100%; background: #f8f9fa; }
+        .info-tip { position: absolute; bottom: 20px; right: 20px; background: rgba(0,0,0,0.6); color: white; padding: 4px 12px; border-radius: 24px; font-size: 12px; z-index: 400; pointer-events: none; }
+        .toast-message { position: fixed; bottom: 80px; right: 20px; background: #2c3e50; color: white; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 1000; max-width: 340px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); pointer-events: none; z-index: 2000; }
+        .toast-success { background: #2c7a4d; }
+        .toast-error { background: #c0392b; }
+        input[type="color"] { width: 28px; height: 28px; border: 1px solid #ccc; border-radius: 4px; }
+        input[type="range"] { width: 80px; }
+        .action-btn { background: none; border: none; cursor: pointer; font-size: 0.7rem; padding: 2px 5px; border-radius: 4px; }
+        .action-btn.del { color: #b91c1c; }
+        .action-btn.add { color: #1e4a6e; }
+        .action-btn:hover { background: rgba(0,0,0,0.05); }
+    </style>
+</head>
+<body>
+<div class="app-container">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2><i class="fas fa-chart-line"></i> 南昌市基准地价查询系统</h2>
+            <div style="font-size: 0.7rem; opacity:0.8;">GitHub 镜像加速 | 一键导入 | 无需代理</div>
+        </div>
+        <div class="global-actions">
+            <button id="expandAllBtn" class="btn btn-outline btn-sm"><i class="fas fa-plus-square"></i> 全部展开</button>
+            <button id="collapseAllBtn" class="btn btn-outline btn-sm"><i class="fas fa-minus-square"></i> 全部折叠</button>
+            <button id="resetTreeBtn" class="btn btn-outline btn-sm"><i class="fas fa-undo-alt"></i> 重置树结构</button>
+            <button id="githubImportBtn" class="btn btn-info btn-sm"><i class="fab fa-github"></i> 从 GitHub 仓库导入</button>
+            <button id="autoImportDirBtn" class="btn btn-success btn-sm"><i class="fas fa-folder-open"></i> 📂 本地目录（备选）</button>
+        </div>
+        <div class="tree-container" id="treeContainer"></div>
+    </div>
+    <div class="map-container">
+        <div id="map"></div>
+        <div class="info-tip"><i class="fas fa-map-marker-alt"></i> 点击地块查看地价详情</div>
+    </div>
+</div>
+
+<script>
+    // ==================== 地图初始化 ====================
+    const map = L.map('map').setView([28.682, 115.858], 11);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19
+    }).addTo(map);
+    L.control.scale({ metric: true, imperial: false }).addTo(map);
+    
+    // 全局变量
+    let treeData = [];
+    let nextNodeId = 1;
+    function uid() { return Date.now() + '-' + Math.random().toString(36).substr(2, 8); }
+    
+    // 颜色工具函数
+    function generateGradientColors(baseHueHex, gradeCount = 5) {
+        let r, g, b;
+        if (baseHueHex && baseHueHex.startsWith('#')) {
+            r = parseInt(baseHueHex.slice(1,3),16);
+            g = parseInt(baseHueHex.slice(3,5),16);
+            b = parseInt(baseHueHex.slice(5,7),16);
+        } else { r=66; g=133; b=244; }
+        let r1=r/255,g1=g/255,b1=b/255;
+        let max=Math.max(r1,g1,b1), min=Math.min(r1,g1,b1);
+        let h,s,l=(max+min)/2;
+        if(max===min) h=s=0;
+        else {
+            let d=max-min;
+            s=l>0.5?d/(2-max-min):d/(max+min);
+            switch(max){
+                case r1: h=(g1-b1)/d+(g1<b1?6:0); break;
+                case g1: h=(b1-r1)/d+2; break;
+                case b1: h=(r1-g1)/d+4; break;
+            }
+            h/=6;
+        }
+        let colors=[];
+        for(let i=0;i<gradeCount;i++){
+            let lightness=0.25+(i/(gradeCount-1))*0.55;
+            let saturation=0.65;
+            let rgb=hslToRgb(h,saturation,lightness);
+            colors.push(rgbToHex(rgb.r,rgb.g,rgb.b));
+        }
+        return colors;
+    }
+    function hslToRgb(h,s,l){
+        let r,g,b;
+        if(s===0) r=g=b=l;
+        else{
+            const hue2rgb=(p,q,t)=>{
+                if(t<0) t+=1;
+                if(t>1) t-=1;
+                if(t<1/6) return p+(q-p)*6*t;
+                if(t<1/2) return q;
+                if(t<2/3) return p+(q-p)*(2/3-t)*6;
+                return p;
+            };
+            let q=l<0.5?l*(1+s):l+s-l*s;
+            let p=2*l-q;
+            r=hue2rgb(p,q,h+1/3);
+            g=hue2rgb(p,q,h);
+            b=hue2rgb(p,q,h-1/3);
+        }
+        return {r:Math.round(r*255),g:Math.round(g*255),b:Math.round(b*255)};
+    }
+    function rgbToHex(r,g,b){return "#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);}
+    
+    function getGradeIndex(tdjb){
+        if(!tdjb) return 2;
+        const gradeMap={'Ⅰ':0,'Ⅱ':1,'Ⅲ':2,'Ⅳ':3,'Ⅴ':4,'I':0,'II':1,'III':2,'IV':3,'V':4,'1':0,'2':1,'3':2,'4':3,'5':4};
+        let val=tdjb.toString().trim();
+        if(gradeMap[val]!==undefined) return gradeMap[val];
+        if(val.includes('一')) return 0;
+        if(val.includes('二')) return 1;
+        if(val.includes('三')) return 2;
+        if(val.includes('四')) return 3;
+        if(val.includes('五')) return 4;
+        return 2;
+    }
+    
+    function getStyleForLeaf(leafNode, tdjb){
+        const grad=generateGradientColors(leafNode.baseHue||'#3b82f6',5);
+        const idx=getGradeIndex(tdjb);
+        return { color:'#444', weight:1.2, fillColor:grad[Math.min(idx,4)], fillOpacity:leafNode.opacity, opacity:0.8 };
+    }
+    
+    function refreshLeafStyle(leafNode){
+        if(!leafNode.featureItems) return;
+        leafNode.featureItems.forEach(item=>{
+            if(item.layer){
+                let tdjb=item.properties?.TDJB || item.properties?.土地级 || 'Ⅲ';
+                item.layer.setStyle(getStyleForLeaf(leafNode, tdjb));
+            }
+        });
+    }
+    
+    function setLeafOpacity(nodeId, opacity){
+        let node = findNodeById(treeData, nodeId);
+        if(node && node.isLeaf){
+            node.opacity = parseFloat(opacity);
+            refreshLeafStyle(node);
+            renderTree();
+        }
+    }
+    function setLeafHue(nodeId, hue){
+        let node = findNodeById(treeData, nodeId);
+        if(node && node.isLeaf){
+            node.baseHue = hue;
+            refreshLeafStyle(node);
+            renderTree();
+        }
+    }
+    function toggleLeafVisibility(nodeId){
+        let node = findNodeById(treeData, nodeId);
+        if(node && node.isLeaf){
+            node.visible = !node.visible;
+            if(node.featureItems){
+                node.featureItems.forEach(item=>{
+                    if(item.layer){
+                        if(node.visible && !map.hasLayer(item.layer)) item.layer.addTo(map);
+                        else if(!node.visible && map.hasLayer(item.layer)) map.removeLayer(item.layer);
+                    }
+                });
+            }
+            renderTree();
+        }
+    }
+    
+    function deleteFeatureFromLeaf(nodeId, featureId){
+        let node = findNodeById(treeData, nodeId);
+        if(!node || !node.isLeaf) return;
+        let idx = node.featureItems.findIndex(f=>f.id===featureId);
+        if(idx!==-1){
+            if(node.featureItems[idx].layer) map.removeLayer(node.featureItems[idx].layer);
+            node.featureItems.splice(idx,1);
+            renderTree();
+        }
+    }
+    
+    // 批量添加要素
+    function batchAddFeaturesToLeaf(nodeId, geoJsonFeaturesArray, clearExisting = true) {
+        let node = findNodeById(treeData, nodeId);
+        if(!node || !node.isLeaf) return 0;
+        if(clearExisting) {
+            if(node.featureItems) {
+                node.featureItems.forEach(item => { if(item.layer && map.hasLayer(item.layer)) map.removeLayer(item.layer); });
+                node.featureItems = [];
+            }
+        }
+        if(!node.featureItems) node.featureItems = [];
+        let addedCount = 0;
+        for(let feature of geoJsonFeaturesArray) {
+            if(!feature.geometry) continue;
+            let props = feature.properties || {};
+            let tdjb = props.TDJB || props.土地级 || props.级别 || 'Ⅲ';
+            let displayName = props.用地类型 || props.用途 || props.name || `地块${node.featureItems.length+1}`;
+            let wrapped = { type:'Feature', properties:{...props, TDJB:tdjb, 基准地价:props.基准地价||props.JZDJ||'待查'}, geometry:feature.geometry };
+            let fLayer = L.geoJSON(wrapped, {
+                style: getStyleForLeaf(node, tdjb),
+                onEachFeature:(f,layer)=>{
+                    let html = `<div style="min-width:180px;"><strong>📌 基准地价信息</strong><br/>`;
+                    html += `<b>土地级别:</b> ${f.properties.TDJB||f.properties.土地级||'—'}<br/>`;
+                    html += `<b>基准地价(元/㎡):</b> ${f.properties.基准地价||f.properties.JZDJ||'—'}<br/>`;
+                    html += `<b>用地类型:</b> ${f.properties.YJTDYT||f.properties.一级土||f.properties.用途||'—'}<br/>`;
+                    html += `<b>容积率:</b> ${f.properties.RJL||'—'}<br/></div>`;
+                    layer.bindPopup(html);
+                }
+            });
+            if(node.visible) fLayer.addTo(map);
+            let shortName = displayName.length>24 ? displayName.slice(0,22)+'..' : displayName;
+            node.featureItems.push({ id: uid(), name: shortName, layer: fLayer, properties: wrapped.properties });
+            addedCount++;
+        }
+        if(addedCount) renderTree();
+        return addedCount;
+    }
+    
+    function findNodeById(nodes, id){
+        for(let node of nodes){
+            if(node.id===id) return node;
+            if(node.children){
+                let found=findNodeById(node.children, id);
+                if(found) return found;
+            }
+        }
+        return null;
+    }
+    
+    function deleteNodeById(nodes, id){
+        for(let i=0;i<nodes.length;i++){
+            if(nodes[i].id===id){
+                function clearLeafLayers(node){
+                    if(node.isLeaf && node.featureItems){
+                        node.featureItems.forEach(item=>{ if(item.layer && map.hasLayer(item.layer)) map.removeLayer(item.layer); });
+                    }
+                    if(node.children) node.children.forEach(child=>clearLeafLayers(child));
+                }
+                clearLeafLayers(nodes[i]);
+                nodes.splice(i,1);
+                return true;
+            }
+            if(nodes[i].children && nodes[i].children.length){
+                if(deleteNodeById(nodes[i].children, id)) return true;
+            }
+        }
+        return false;
+    }
+    
+    function addChildNode(parentId, nodeName, isLeaf, baseHue='#3b82f6', opacity=0.7){
+        let parent = findNodeById(treeData, parentId);
+        if(!parent) return null;
+        if(!parent.children) parent.children=[];
+        let newNode = {
+            id: nextNodeId++,
+            name: nodeName,
+            isLeaf: isLeaf,
+            expanded: true,
+            children: isLeaf ? undefined : [],
+            featureItems: isLeaf ? [] : undefined,
+            baseHue: baseHue,
+            opacity: opacity,
+            visible: true
+        };
+        parent.children.push(newNode);
+        renderTree();
+        return newNode;
+    }
+    
+    // 构建初始树
+    function buildInitialTree(){
+        let stateOwned = { id: nextNodeId++, name: "国有建设用地", isLeaf: false, expanded: true, children: [] };
+        let year2020 = { id: nextNodeId++, name: "2020年基准地价", isLeaf: false, expanded: false, children: [] };
+        let year2023 = { id: nextNodeId++, name: "2023年基准地价", isLeaf: false, expanded: false, children: [] };
+        let industry2020 = { id: nextNodeId++, name: "工业用地", isLeaf: true, featureItems: [], baseHue: "#2d6a4f", opacity: 0.7, visible: true };
+        let commercial2020 = { id: nextNodeId++, name: "商业用地", isLeaf: true, featureItems: [], baseHue: "#e76f51", opacity: 0.7, visible: true };
+        let residential2020 = { id: nextNodeId++, name: "住宅用地", isLeaf: true, featureItems: [], baseHue: "#2c7fb8", opacity: 0.7, visible: true };
+        year2020.children.push(industry2020, commercial2020, residential2020);
+        
+        let industry2023 = { id: nextNodeId++, name: "工业用地", isLeaf: true, featureItems: [], baseHue: "#2d6a4f", opacity: 0.7, visible: true };
+        let commercial2023 = { id: nextNodeId++, name: "商业用地", isLeaf: true, featureItems: [], baseHue: "#e76f51", opacity: 0.7, visible: true };
+        let residential2023 = { id: nextNodeId++, name: "住宅用地", isLeaf: true, featureItems: [], baseHue: "#2c7fb8", opacity: 0.7, visible: true };
+        year2023.children.push(industry2023, commercial2023, residential2023);
+        stateOwned.children.push(year2020, year2023);
+        
+        let collective = { id: nextNodeId++, name: "集体建设用地", isLeaf: false, expanded: true, children: [] };
+        let commIndus = { id: nextNodeId++, name: "市本级商业用地", isLeaf: true, featureItems: [], baseHue: "#e76f51", opacity: 0.7, visible: true };
+        let indusLand = { id: nextNodeId++, name: "市本级工业用地", isLeaf: true, featureItems: [], baseHue: "#2d6a4f", opacity: 0.7, visible: true };
+        let homestay = { id: nextNodeId++, name: "市本级宅基地", isLeaf: true, featureItems: [], baseHue: "#2c7fb8", opacity: 0.7, visible: true };
+        collective.children.push(commIndus, indusLand, homestay);
+        
+        let agri = { id: nextNodeId++, name: "农用地", isLeaf: false, expanded: true, children: [] };
+        let farmland = { id: nextNodeId++, name: "耕地", isLeaf: true, featureItems: [], baseHue: "#8b5a2b", opacity: 0.7, visible: true };
+        let garden = { id: nextNodeId++, name: "园地", isLeaf: true, featureItems: [], baseHue: "#6b8e23", opacity: 0.7, visible: true };
+        let forest = { id: nextNodeId++, name: "林地", isLeaf: true, featureItems: [], baseHue: "#228b22", opacity: 0.7, visible: true };
+        let grass = { id: nextNodeId++, name: "草地", isLeaf: true, featureItems: [], baseHue: "#9acd32", opacity: 0.7, visible: true };
+        agri.children.push(farmland, garden, forest, grass);
+        
+        return [stateOwned, collective, agri];
+    }
+    
+    function showToast(msg, isError=false) {
+        let div = document.createElement('div');
+        div.className = `toast-message ${isError ? 'toast-error' : 'toast-success'}`;
+        div.innerHTML = `<i class="fas ${isError?'fa-exclamation-triangle':'fa-check-circle'}"></i> ${msg}`;
+        document.body.appendChild(div);
+        setTimeout(()=>div.remove(), 4500);
+    }
+    
+    // ================== 核心：使用 jsDelivr 镜像导入 ==================
+    // 镜像地址（国内可访问）
+    const GITHUB_RAW_BASE = "https://cdn.jsdelivr.net/gh/Hwb931225/nanchang-land-price@main/南昌市基准地价";
+    
+    // 图层映射：相对路径 -> 树节点路径
+    const layerMappings = [
+        { filePath: "集体建设用地/市本级工业用地.geojson", targetPath: "集体建设用地/市本级工业用地" },
+        { filePath: "集体建设用地/市本级商业用地.geojson", targetPath: "集体建设用地/市本级商业用地" },
+        { filePath: "集体建设用地/市本级宅基地.geojson", targetPath: "集体建设用地/市本级宅基地" },
+        { filePath: "国有建设用地/2023年基准地价/工业用地.geojson", targetPath: "国有建设用地/2023年基准地价/工业用地" },
+        { filePath: "国有建设用地/2023年基准地价/商业用地.geojson", targetPath: "国有建设用地/2023年基准地价/商业用地" },
+        { filePath: "国有建设用地/2023年基准地价/住宅用地.geojson", targetPath: "国有建设用地/2023年基准地价/住宅用地" }
+    ];
+    
+    function findNodeByPath(pathStr) {
+        const parts = pathStr.split('/');
+        let current = treeData;
+        for (let p of parts) {
+            let found = null;
+            for (let node of current) {
+                if (node.name === p) {
+                    found = node;
+                    break;
+                }
+            }
+            if (!found) return null;
+            if (found.isLeaf && parts[parts.length-1] === p) return found;
+            if (found.children) current = found.children;
+            else return null;
+        }
+        return null;
+    }
+    
+    async function importLayerFromGitHub(mapping) {
+        const url = `${GITHUB_RAW_BASE}/${mapping.filePath}`;
+        const targetNode = findNodeByPath(mapping.targetPath);
+        if (!targetNode) {
+            console.warn(`未找到节点: ${mapping.targetPath}`);
+            return false;
+        }
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const geojson = await response.json();
+            let features = [];
+            if (geojson.type === 'FeatureCollection') features = geojson.features;
+            else if (geojson.type === 'Feature') features = [geojson];
+            else throw new Error("无效 GeoJSON");
+            if (features.length === 0) return false;
+            const cnt = batchAddFeaturesToLeaf(targetNode.id, features, true);
+            showToast(`✅ ${targetNode.name}: 导入 ${cnt} 个要素`);
+            return true;
+        } catch (err) {
+            console.error(`导入失败 ${mapping.filePath}:`, err);
+            showToast(`❌ 导入失败: ${mapping.filePath}`, true);
+            return false;
+        }
+    }
+    
+    async function importAllFromGitHub() {
+        showToast("开始从 GitHub (jsDelivr 镜像) 导入数据...");
+        let successCount = 0;
+        for (let mapping of layerMappings) {
+            const ok = await importLayerFromGitHub(mapping);
+            if (ok) successCount++;
+            await new Promise(r => setTimeout(r, 200));
+        }
+        showToast(`🎉 导入完成！成功 ${successCount}/${layerMappings.length} 个图层`);
+        renderTree();
+    }
+    
+    // ================== 保留本地目录导入作为备选（功能完整但可忽略） ==================
+    async function autoImportFromRootDirectory() {
+        if (!window.showDirectoryPicker) {
+            showToast("当前浏览器不支持目录选择高级API", true);
+            fallbackLegacyImport();
+            return;
+        }
+        try {
+            const rootHandle = await window.showDirectoryPicker();
+            showToast("正在扫描目录结构...");
+            let subFolders = [];
+            for await (let entry of rootHandle.values()) {
+                if (entry.kind === 'directory') subFolders.push(entry);
+            }
+            const expectedFolders = ['国有建设用地', '集体建设用地', '农用地'];
+            let anyMatched = false;
+            for (let folder of subFolders) {
+                if (expectedFolders.includes(folder.name)) {
+                    anyMatched = true;
+                    showToast(`处理: ${folder.name}`);
+                }
+            }
+            if (!anyMatched) showToast("未找到标准子文件夹", true);
+        } catch(err) {
+            if(err.name !== 'AbortError') showToast("读取目录失败", true);
+        }
+    }
+    function fallbackLegacyImport() {
+        showToast("请手动选择 GeoJSON 文件", true);
+    }
+    
+    // ================== 渲染树界面 ==================
+    function renderTree(){
+        const container = document.getElementById('treeContainer');
+        if(!container) return;
+        container.innerHTML = '';
+        function renderNode(node, level=0){
+            const nodeDiv = document.createElement('div');
+            nodeDiv.className = 'tree-node';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'node-content';
+            const labelSpan = document.createElement('div');
+            labelSpan.className = 'node-label';
+            if(!node.isLeaf && node.children && node.children.length){
+                const expandIcon = document.createElement('i');
+                expandIcon.className = node.expanded ? 'fas fa-folder-open' : 'fas fa-folder';
+                expandIcon.style.cursor = 'pointer';
+                expandIcon.onclick = (e) => { e.stopPropagation(); node.expanded = !node.expanded; renderTree(); };
+                labelSpan.appendChild(expandIcon);
+            } else if(node.isLeaf){
+                const leafIcon = document.createElement('i');
+                leafIcon.className = 'fas fa-map-marker-alt';
+                leafIcon.style.color = node.baseHue;
+                labelSpan.appendChild(leafIcon);
+            } else {
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-folder';
+                labelSpan.appendChild(icon);
+            }
+            const nameSpan = document.createElement('span');
+            nameSpan.innerText = node.name;
+            nameSpan.style.fontWeight = node.isLeaf ? 'normal' : '600';
+            labelSpan.appendChild(nameSpan);
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'node-actions';
+            if(!node.isLeaf){
+                const addBtn = document.createElement('button');
+                addBtn.className = 'action-btn add';
+                addBtn.innerHTML = '<i class="fas fa-plus-circle"></i>';
+                addBtn.title = '添加子图层';
+                addBtn.onclick = (e) => { e.stopPropagation(); let name = prompt('输入图层名称', '新图层'); if(name){ let isLeaf = confirm('是否为数据图层？'); addChildNode(node.id, name, isLeaf); } };
+                actionsDiv.appendChild(addBtn);
+            }
+            if(level > 0){
+                const delBtn = document.createElement('button');
+                delBtn.className = 'action-btn del';
+                delBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+                delBtn.onclick = (e) => { e.stopPropagation(); if(confirm(`删除“${node.name}”及其子节点？`)){ deleteNodeById(treeData, node.id); renderTree(); } };
+                actionsDiv.appendChild(delBtn);
+            }
+            if(node.isLeaf){
+                const visIcon = document.createElement('i');
+                visIcon.className = `fas ${node.visible ? 'fa-eye' : 'fa-eye-slash'} visibility-icon`;
+                visIcon.style.cursor = 'pointer';
+                visIcon.onclick = (e) => { e.stopPropagation(); toggleLeafVisibility(node.id); };
+                actionsDiv.appendChild(visIcon);
+            }
+            contentDiv.appendChild(labelSpan);
+            contentDiv.appendChild(actionsDiv);
+            nodeDiv.appendChild(contentDiv);
+            if(node.isLeaf){
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'leaf-layer-controls';
+                controlsDiv.innerHTML = `
+                    <div class="style-row">
+                        <div class="style-item"><label>🎨主色</label><input type="color" class="leaf-hue" value="${node.baseHue}"></div>
+                        <div class="style-item"><label>🔮透明度</label><input type="range" class="leaf-opacity" min="0" max="1" step="0.05" value="${node.opacity}"><span>${Math.round(node.opacity*100)}%</span></div>
+                        <div class="style-item"><label>📥手动导入</label><input type="file" accept=".geojson" class="leaf-import" style="display:none;"><button class="import-btn-sm">选择文件</button></div>
+                    </div>
+                `;
+                const hueInput = controlsDiv.querySelector('.leaf-hue');
+                hueInput.addEventListener('change', (e) => setLeafHue(node.id, hueInput.value));
+                const opaInput = controlsDiv.querySelector('.leaf-opacity');
+                const opaSpan = controlsDiv.querySelector('span');
+                opaInput.addEventListener('input', (e) => { let val = parseFloat(opaInput.value); setLeafOpacity(node.id, val); opaSpan.innerText = Math.round(val*100)+'%'; });
+                const importBtn = controlsDiv.querySelector('.import-btn-sm');
+                const fileInput = controlsDiv.querySelector('.leaf-import');
+                importBtn.onclick = () => fileInput.click();
+                fileInput.onchange = (e) => { if(e.target.files[0]) { const reader = new FileReader(); reader.onload = ev => { try{ let geojson=JSON.parse(ev.target.result); batchAddFeaturesToLeaf(node.id, (geojson.features||[geojson]), true); } catch(e){ alert("JSON解析失败"); } }; reader.readAsText(e.target.files[0]); } fileInput.value=''; };
+                const featureTitle = document.createElement('div');
+                featureTitle.style.fontSize='0.7rem'; featureTitle.style.fontWeight='bold'; featureTitle.style.marginTop='6px';
+                featureTitle.innerText = `要素 (${node.featureItems?.length||0})`;
+                controlsDiv.appendChild(featureTitle);
+                const listDiv = document.createElement('div');
+                listDiv.className = 'features-list';
+                if(!node.featureItems || node.featureItems.length===0){
+                    listDiv.innerHTML = '<div class="empty-features">暂无要素，请点击“从 GitHub 仓库导入”</div>';
+                } else {
+                    node.featureItems.forEach(feat=>{
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'feature-item';
+                        let tdjb = feat.properties?.TDJB || 'Ⅲ';
+                        let grad = generateGradientColors(node.baseHue,5);
+                        let borderColor = grad[getGradeIndex(tdjb)];
+                        itemDiv.style.borderLeftColor = borderColor;
+                        itemDiv.innerHTML = `<span style="flex:1;"><i class="fas fa-draw-polygon"></i> ${feat.name} (${tdjb}级)</span>
+                                              <button class="del-feature-btn" style="background:none; border:none; color:#b91c1c;"><i class="fas fa-trash-alt"></i></button>`;
+                        itemDiv.querySelector('.del-feature-btn').onclick = (e) => { e.stopPropagation(); deleteFeatureFromLeaf(node.id, feat.id); };
+                        listDiv.appendChild(itemDiv);
+                    });
+                }
+                controlsDiv.appendChild(listDiv);
+                nodeDiv.appendChild(controlsDiv);
+            }
+            if(!node.isLeaf && node.children && node.children.length && node.expanded){
+                const childWrapper = document.createElement('div');
+                childWrapper.className = 'children-wrapper expanded';
+                node.children.forEach(child => childWrapper.appendChild(renderNode(child, level+1)));
+                nodeDiv.appendChild(childWrapper);
+            }
+            return nodeDiv;
+        }
+        treeData.forEach(root => container.appendChild(renderNode(root, 0)));
+    }
+    
+    function resetTree(){
+        function clearAllMapLayers(nodes){
+            for(let node of nodes){
+                if(node.isLeaf && node.featureItems) node.featureItems.forEach(item=>{ if(item.layer && map.hasLayer(item.layer)) map.removeLayer(item.layer); });
+                if(node.children) clearAllMapLayers(node.children);
+            }
+        }
+        clearAllMapLayers(treeData);
+        nextNodeId = 1;
+        treeData = buildInitialTree();
+        renderTree();
+        showToast("树结构已重置，所有矢量数据已清空");
+    }
+    
+    function setExpandAll(nodes, expand){
+        for(let node of nodes){
+            if(!node.isLeaf){ node.expanded = expand; if(node.children) setExpandAll(node.children, expand); }
+        }
+    }
+    
+    function init(){
+        treeData = buildInitialTree();
+        renderTree();
+        document.getElementById('expandAllBtn').onclick = () => { setExpandAll(treeData, true); renderTree(); };
+        document.getElementById('collapseAllBtn').onclick = () => { setExpandAll(treeData, false); renderTree(); };
+        document.getElementById('resetTreeBtn').onclick = () => { if(confirm('重置将清空所有矢量数据，恢复初始目录树，是否继续？')) resetTree(); };
+        document.getElementById('githubImportBtn').onclick = () => importAllFromGitHub();
+        document.getElementById('autoImportDirBtn').onclick = () => autoImportFromRootDirectory();
+    }
+    init();
+</script>
+</body>
+</html>
